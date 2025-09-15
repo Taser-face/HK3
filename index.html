@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>香港行程助手</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#071833">
+<style>
+:root{ --bg:#000; --card:#0b0f1a; --border:#0a2b6b; --ink:#fff; --muted:#c7c7cc; --accent:#1e90ff; --danger:#ff453a; }
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,'PingFang SC','Noto Sans SC','Microsoft Yahei',sans-serif;font-size:20px;}
+.container{max-width:760px;margin:0 auto;padding:20px 16px 120px;}
+.titlebar{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;}
+.titlebar .lh1{line-height:1.1}
+.muted{color:var(--muted)}
+.card{background:var(--card);border:2px solid var(--border);border-radius:18px;padding:14px 14px;box-shadow:0 2px 0 rgba(0,0,0,.35);margin-bottom:14px;}
+.card h3{margin:0 0 8px;font-size:26px;font-weight:800;color:#fff}
+.row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.pill{display:inline-block;padding:6px 14px;border-radius:999px;font-size:18px;border:2px solid var(--border);background:#08142a;color:#e6f0ff;}
+.pill.active{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn{background:#0a1a36;border:2px solid var(--border);color:#fff;padding:10px 14px;border-radius:14px;font-size:18px;}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn[disabled]{opacity:.5;cursor:not-allowed}
+.list{display:flex;flex-direction:column;gap:10px}
+.todo{display:flex;align-items:flex-start;gap:12px}
+.todo input[type=checkbox]{width:24px;height:24px;margin-top:2px}
+.todo .title{font-size:20px;line-height:1.3;color:#fff}
+.todo .meta{font-size:16px;color:var(--muted)}
+.badge{display:inline-block;padding:2px 8px;border-radius:8px;background:#0a1a36;color:#8ec1ff;font-size:14px;border:2px solid var(--border)}
+.sectionTitle{font-weight:800;margin:10px 0;font-size:24px}
+.daycard{background:#060b16;border:2px dashed var(--border);border-radius:14px;padding:10px;margin:10px 0}
+.flex{display:flex}
+.space-between{justify-content:space-between}
+.footgap{height:80px}
+.choiceRow{margin-top:10px}
+.choiceRow button{margin-right:10px;margin-top:6px}
+details.fold>summary{list-style:none;cursor:pointer;outline:none}
+details.fold>summary::-webkit-details-marker{display:none}
+.summaryBtn{display:flex;align-items:center;justify-content:space-between;width:100%;padding:10px 14px;background:#08142a;border:2px solid var(--border);border-radius:12px;color:#fff;font-weight:700;font-size:22px}
+.timeText{color:#e3efff}
+.timeText.conflict{color:var(--danger);font-weight:800}
+.editRow{margin-top:8px;display:none;gap:8px;align-items:center;flex-wrap:wrap}
+.timeInput{background:#08142a;color:#fff;border:2px solid var(--border);border-radius:10px;padding:8px;font-size:18px}
+.hint{color:#ffd479;font-size:16px}
+.danger{color:var(--danger)}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="titlebar">
+    <div>
+      <div class="lh1" style="font-size:30px;font-weight:900;">香港行程助手</div>
+      <div id="dateStr" class="muted" style="font-size:18px;"></div>
+    </div>
+    <div class="row">
+      <button id="resetBtn" class="btn">重置</button>
+    </div>
+  </div>
+
+  <div class="card" id="nowCard">
+    <h3>此刻该做什么？</h3>
+    <div id="nowBlock" style="margin-top:8px;"></div>
+  </div>
+
+  <div class="card">
+    <h3>今日待办清单</h3>
+    <div class="muted">可勾选完成，自动保存</div>
+    <div id="todoList" class="list" style="margin-top:8px;"></div>
+  </div>
+
+  <div class="card">
+    <details class="fold" id="foldAll">
+      <summary class="summaryBtn">
+        <span>全部行程（9/17–9/22）</span>
+        <span id="foldArrow">▼</span>
+      </summary>
+      <div id="fullPlan" style="margin-top:12px;"></div>
+    </details>
+  </div>
+
+  <div class="card">
+    <h3>操作</h3>
+    <div class="row" style="margin-top:8px;">
+      <details>
+        <summary class="pill">Android 安装到主屏说明</summary>
+        <div class="muted" style="margin-top:8px;">
+          打开 <b>Chrome</b> → 右上角菜单（三点） → <b>添加到主屏幕</b>（或“安装应用”）。
+        </div>
+      </details>
+    </div>
+    <div style="margin-top:12px;">
+      <button id="saveBtn" class="btn" disabled>保存</button>
+      <span id="saveHint" class="muted" style="margin-left:10px;">已保存</span>
+      <span id="conflictHint" class="danger" style="margin-left:10px;display:none;">存在时间冲突，无法保存</span>
+    </div>
+  </div>
+
+  <div class="footgap"></div>
+</div>
+
+<script>
+/* ===== Utilities ===== */
+function fmtHM(d){ return d.toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}); }
+function fmtMD(d){ const y=d.getFullYear(), m=d.getMonth()+1, day=d.getDate(); return `${y}/${m}/${day}`; }
+function isSameYMD(a,b){ return a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth() && a.getDate()===b.getDate(); }
+function deepEqual(a,b){ try{return JSON.stringify(a)===JSON.stringify(b);}catch{return false;} }
+function pad2(n){ return n.toString().padStart(2,'0'); }
+
+/* ===== Data ===== */
+const PLAN = {
+  days: [
+    {
+      date: "2025-09-17",
+      title: "抵港 → 迪士尼半日",
+      slots: [
+        { id:"arriveHKG", type:"fixed", title:"落地 + 去迪士尼乐园酒店寄存", time:["2025-09-17T11:25:00+08:00","2025-09-17T13:00:00+08:00"], note:"可的士或地铁（S1+东涌线+迪士尼线）" },
+        { id:"disney", type:"fixed", title:"香港迪士尼（半日票）玩到闭园", time:["2025-09-17T13:30:00+08:00","2025-09-17T20:00:00+08:00"], note:"酒店↔乐园有免费穿梭巴士；步行10–20分钟" },
+      ]
+    },
+    {
+      date: "2025-09-18",
+      title: "酒店慢享 → 搬到铜锣湾皇悦 → 办卡 + 行动模块",
+      slots: [
+        { id:"leisure", type:"fixed", title:"迪士尼乐园酒店慢享/退房寄存", time:["2025-09-18T08:30:00+08:00","2025-09-18T11:00:00+08:00"] },
+        { id:"moveToEmpire", type:"fixed", title:"前往铜锣湾皇悦酒店（天后站）", time:["2025-09-18T11:00:00+08:00","2025-09-18T13:00:00+08:00"] },
+        { id:"banking", type:"fixed", title:"开户（优先 HSBC One / 备选渣打临柜）", time:["2025-09-18T13:30:00+08:00","2025-09-18T16:30:00+08:00"], note:"周一–五 9:00–17:00；周六至13:00；周日休" },
+        { id:"slot18", type:"choice", title:"可选：行动A 或 行动B", time:["2025-09-18T16:30:00+08:00","2025-09-18T21:00:00+08:00"],
+          choices: {
+            A: { id:"A_MOKO_18", title:"行动A｜MOKO 新世纪广场（SEVENTEEN 快闪）", where:"旺角东站上盖（天后→金钟→旺角东）" },
+            B: { id:"B_VH_18", title:"行动B｜维港 + 星光大道 + K11 MUSEA", where:"湾仔码头→天星小轮→尖沙咀海滨（K11 紧邻星光大道）" },
+          }
+        },
+        { id:"Cnight18", type:"optional", title:"（可选）行动C｜铜锣湾夜逛：登龙街美食/渣甸坊市集/时代广场", time:["2025-09-18T19:30:00+08:00","2025-09-18T22:30:00+08:00"] },
+      ]
+    },
+    {
+      date: "2025-09-19",
+      title: "ifc 取机 + 行动模块 + 夜逛可选",
+      slots: [
+        { id:"ifcPickup", type:"fixed", title:"前往 ifc 取 iPhone（按预约时段）", time:["2025-09-19T10:00:00+08:00","2025-09-19T12:30:00+08:00"] },
+        { id:"slot19", type:"choice", title:"可选：行动A 或 行动B（与 9/18 互补）", time:["2025-09-19T13:30:00+08:00","2025-09-19T21:00:00+08:00"],
+          choices: {
+            A: { id:"A_MOKO_19", title:"行动A｜MOKO 新世纪广场（SEVENTEEN 快闪）", where:"旺角东站上盖（天后→金钟→旺角东）" },
+            B: { id:"B_VH_19", title:"行动B｜维港 + 星光大道 + K11 MUSEA", where:"湾仔码头→天星小轮→尖沙咀海滨（K11 紧邻星光大道）" },
+          }
+        },
+        { id:"Cnight19", type:"optional", title:"（可选）行动C｜铜锣湾夜逛：登龙街美食/渣甸坊市集/时代广场", time:["2025-09-19T19:30:00+08:00","2025-09-19T22:30:00+08:00"] },
+      ]
+    },
+    {
+      date: "2025-09-20",
+      title: "室内/不晒的轻松备选（1）",
+      slots: [
+        { id:"opt1", type:"suggest", title:"海洋公园（缆车+水族馆，可加海龙王餐厅）" },
+        { id:"opt2", type:"suggest", title:"西九文化区：M+（设计/影像）+ 香港故宫（书画），午餐戏曲中心" },
+        { id:"opt3", type:"suggest", title:"尖沙咀博物馆线：艺术馆 + 科学馆 + 天文馆（串场空调）" },
+        { id:"opt4", type:"suggest", title:"中环文化地标：PMQ / 大馆 Tai Kwun / 中环街市（文创+餐饮）" },
+        { id:"opt5", type:"suggest", title:"商场主题日：太古广场 / 又一城 / 朗豪坊（地铁直达，雨天友好）" },
+        { id:"opt6", type:"suggest", title:"湾仔会展周边：金紫荆广场 + 利东街（有顶棚，吃喝逛一体）" },
+        { id:"opt7", type:"suggest", title:"铜锣湾深度：时代广场主题展 + 利园线逛街 + 登龙街美食" },
+      ]
+    },
+    {
+      date: "2025-09-21",
+      title: "室内/不晒的轻松备选（2）",
+      slots: [
+        { id:"opt8", type:"suggest", title:"K11 MUSEA 深度逛 + K11 Art House 观影 + 海滨休闲" },
+        { id:"opt9", type:"suggest", title:"海港城 + 1881 + 钟楼&天星码头 一线（随时入商场避暑）" },
+        { id:"opt10", type:"suggest", title:"太古城中心 + 太古坊（空调连通，餐饮丰富）" },
+        { id:"opt11", type:"suggest", title:"赤柱广场（半室外有顶棚）+ 美利楼 + 泳滩看海（挑阴天）" },
+        { id:"opt12", type:"suggest", title:"又一城 + APITA 超市采买（回程伴手礼）" },
+      ]
+    },
+    {
+      date: "2025-09-22",
+      title: "返程日",
+      slots: [
+        { id:"pack", type:"fixed", title:"打包退房，检查证件/充电线" },
+        { id:"toAirport", type:"fixed", title:"前往机场（A11/机场快线/的士）", time:["2025-09-22T09:30:00+08:00","2025-09-22T11:00:00+08:00"] },
+        { id:"fly", type:"fixed", title:"12:30 起飞 → 15:05 抵达无锡" },
+      ]
+    },
+  ]
+};
+
+/* ===== Storage ===== */
+const LS_KEY = "hk_trip_ios_edit_time_state_v1";
+const LS_SAVED = "hk_trip_ios_edit_time_saved_v1";
+function loadState(){ try{return JSON.parse(localStorage.getItem(LS_KEY)||"{}");}catch{return {};}}
+function saveState(s){ localStorage.setItem(LS_KEY, JSON.stringify(s)); }
+function loadSaved(){ try{return JSON.parse(localStorage.getItem(LS_SAVED)||"{}");}catch{return {};}}
+function saveSnapshot(s){ localStorage.setItem(LS_SAVED, JSON.stringify(s)); }
+
+/* ===== State ===== */
+let appState = (function(){
+  const s = loadState();
+  return {
+    selected: {"2025-09-18": (s?.selected?.["2025-09-18"] ?? null), "2025-09-19": (s?.selected?.["2025-09-19"] ?? null)},
+    nights: {"2025-09-18": (s?.nights?.["2025-09-18"] ?? false), "2025-09-19": (s?.nights?.["2025-09-19"] ?? false)},
+    done: s?.done || {},
+    times: s?.times || {},   // times[date][itemId] = {start:"HH:MM", end:"HH:MM"}
+  };
+})();
+
+/* ===== Helpers for time overrides ===== */
+function getOverride(date, id){
+  const d = appState.times?.[date];
+  if(!d) return null;
+  return d[id] || null;
+}
+function setOverride(date, id, start, end){
+  appState.times[date] = appState.times[date] || {};
+  if(start && end){ appState.times[date][id] = {start, end}; }
+  else{ delete appState.times[date][id]; }
+}
+function getItemTime(day, slot){
+  // returns [startDateObj, endDateObj] or null
+  let s = null, e = null;
+  const ov = getOverride(day.date, slot.effectiveId || slot.id);
+  if(ov && ov.start && ov.end){
+    s = new Date(`${day.date}T${ov.start}:00+08:00`);
+    e = new Date(`${day.date}T${ov.end}:00+08:00`);
+  }else if(slot.time){
+    s = new Date(slot.time[0]); e = new Date(slot.time[1]);
+  }else{
+    return null;
+  }
+  return [s,e];
+}
+
+/* ===== Conflict detection ===== */
+function findConflictsForDay(day){
+  const items = enrichDay(day);
+  const ranges = [];
+  items.forEach(it=>{
+    const t = getItemTime(day, it);
+    if(!t) return;
+    const [s,e] = t;
+    if(e<=s) return; // ignore invalid
+    ranges.push({id:(it.effectiveId||it.id), start:s.getTime(), end:e.getTime()});
+  });
+  ranges.sort((a,b)=>a.start-b.start);
+  const conflictIds = new Set();
+  for(let i=1;i<ranges.length;i++){
+    if(ranges[i].start < ranges[i-1].end){
+      conflictIds.add(ranges[i-1].id);
+      conflictIds.add(ranges[i].id);
+    }
+  }
+  return conflictIds;
+}
+function anyConflicts(){
+  for(const day of PLAN.days){
+    const c = findConflictsForDay(day);
+    if(c.size>0) return true;
+  }
+  return false;
+}
+
+/* ===== Snapshot / Save button ===== */
+function getSnapshot(){ return {selected:appState.selected, nights:appState.nights, done:appState.done, times:appState.times}; }
+function refreshSaveButton(){
+  const saveBtn = document.getElementById("saveBtn");
+  const hint = document.getElementById("saveHint");
+  const conflict = anyConflicts();
+  const dirty = JSON.stringify(loadSaved()) !== JSON.stringify(getSnapshot());
+  saveBtn.disabled = conflict || !dirty;
+  document.getElementById("conflictHint").style.display = conflict ? "inline" : "none";
+  hint.textContent = conflict ? "存在冲突，需先修改时间" : (dirty ? "有未保存更改" : "已保存");
+}
+function persist(){ saveState(appState); refreshSaveButton(); }
+
+/* ===== Core logic ===== */
+function enrichDay(day){
+  const items = [];
+  for (const slot of day.slots) {
+    if (slot.type === "choice") {
+      const sel = appState.selected[day.date];
+      if (sel && slot.choices?.[sel]) {
+        const c = slot.choices[sel];
+        items.push(Object.assign({}, slot, { effectiveId: c.id, effectiveTitle: c.title, effectiveWhere: c.where }));
+      } else {
+        items.push(Object.assign({}, slot, { effectiveId: slot.id, pending: true }));
+      }
+    } else if (slot.type === "optional") {
+      const enabled = appState.nights[day.date];
+      if (enabled) items.push(Object.assign({}, slot, { effectiveId: slot.id }));
+    } else if (slot.type === "suggest") {
+      // 仅当用户给了时间才纳入当日待办/当前逻辑
+      const ov = getOverride(day.date, slot.id);
+      if (ov && ov.start && ov.end) items.push(Object.assign({}, slot, { effectiveId: slot.id }));
+    } else {
+      items.push(Object.assign({}, slot, { effectiveId: slot.id }));
+    }
+  }
+  // Sort by effective time if any
+  items.sort((a,b)=>{
+    const ta = getItemTime(day,a); const tb = getItemTime(day,b);
+    const va = ta?ta[0].getTime():Infinity; const vb = tb?tb[0].getTime():Infinity;
+    return va - vb;
+  });
+  return items;
+}
+
+function computeTodayPlan(){
+  const today = new Date();
+  const day = PLAN.days.find(d => isSameYMD(new Date(d.date+"T00:00:00+08:00"), today));
+  if (!day) return { day:null, items:[], current:null, next:null };
+  const items = enrichDay(day);
+  const nowT = today.getTime();
+  let current=null, next=null;
+  for (const it of items) {
+    const t = getItemTime(day,it);
+    if(!t) continue;
+    const st = t[0].getTime(), ed = t[1].getTime();
+    if (nowT >= st && nowT <= ed) { current = it; break; }
+    if (nowT < st && !next) next = it;
+  }
+  return { day, items, current, next };
+}
+
+/* ===== Rendering ===== */
+const elDateStr = document.getElementById("dateStr");
+const elNow = document.getElementById("nowBlock");
+const elTodo = document.getElementById("todoList");
+const elFull = document.getElementById("fullPlan");
+
+function renderHeader(){
+  const d = new Date();
+  elDateStr.textContent = fmtMD(d);
+}
+
+function renderNow(){
+  const plan = computeTodayPlan();
+  if (!plan.day) {
+    elNow.innerHTML = '<div class="muted">今天不在 9/17–9/22 行程范围内。</div>';
+    elTodo.innerHTML = '<div class="muted">今日不在行程期内。</div>';
+    return;
+  }
+  if (plan.current) {
+    const t = plan.current;
+    const rng = getItemTime(plan.day, t);
+    elNow.innerHTML = `
+      <div style="margin-bottom:6px;">
+        <div class="muted" style="font-size:18px;">正在进行</div>
+        <div style="font-size:24px;font-weight:800;color:#fff;">${t.effectiveTitle || t.title}</div>
+        ${(t.effectiveWhere?`<div class="muted" style="font-size:18px;">${t.effectiveWhere}</div>`:'')}
+        ${(rng?`<div class="muted" style="font-size:18px;">${fmtHM(rng[0])}–${fmtHM(rng[1])}</div>`:'')}
+      </div>`;
+  } else {
+    elNow.innerHTML = '<div class="muted">当前无进行中的计划。</div>';
+  }
+  if (plan.next) {
+    const n = plan.next;
+    const rng = getItemTime(plan.day, n);
+    elNow.innerHTML += `
+      <div style="margin-top:8px;">
+        <div class="muted" style="font-size:18px;">下一项</div>
+        <div style="font-weight:800;color:#fff;">${n.effectiveTitle || n.title}</div>
+        ${(rng?`<div class="muted" style="font-size:18px;">${fmtHM(rng[0])}–${fmtHM(rng[1])}</div>`:'')}
+      </div>`;
+  }
+
+  // 今日待办
+  const items = plan.items;
+  if (items.length) {
+    elTodo.innerHTML = items.map(it => {
+      const done = !!appState.done[it.effectiveId];
+      const rng = getItemTime(plan.day, it);
+      return `<div class="todo">
+        <input type="checkbox" data-id="${it.effectiveId}" ${done?'checked':''}>
+        <div>
+          <div class="title" style="${done?'text-decoration:line-through;color:#9aa0a6;':''}">${it.effectiveTitle || it.title}</div>
+          ${(it.effectiveWhere?`<div class="meta">${it.effectiveWhere}</div>`:'')}
+          ${(rng?`<div class="meta">${fmtHM(rng[0])}–${fmtHM(rng[1])}</div>`:'')}
+          ${(it.note?`<div class="meta">${it.note}</div>`:'')}
+        </div>
+      </div>`;
+    }).join("");
+    elTodo.querySelectorAll("input[type=checkbox]").forEach(ch=>{
+      ch.addEventListener("change",()=>{
+        const id = ch.getAttribute("data-id");
+        appState.done[id]=ch.checked; persist();
+      });
+    });
+  } else {
+    elTodo.innerHTML = '<div class="muted">今日无待办；请在“全部行程”里设置时间。</div>';
+  }
+}
+
+function renderFull(){
+  const parts = [];
+  for (const day of PLAN.days) {
+    const items = enrichDay(day);
+    const conflictIds = findConflictsForDay(day);
+    const allSlots = day.slots; // for display including those not selected (suggestions)
+    parts.push(`<div class="daycard">
+      <div class="flex space-between">
+        <div class="sectionTitle">${day.date} · ${day.title}</div>
+      </div>
+      ${allSlots.map(it=>{
+        const effId = (it.type==="choice" && appState.selected[day.date] && it.choices[appState.selected[day.date]])? it.choices[appState.selected[day.date]].id
+                    : (it.type==="choice" ? it.id : it.id);
+        const effTitle = (it.type==="choice" && appState.selected[day.date] && it.choices[appState.selected[day.date]])? it.choices[appState.selected[day.date]].title : (it.title);
+        const effWhere = (it.type==="choice" && appState.selected[day.date] && it.choices[appState.selected[day.date]])? it.choices[appState.selected[day.date]].where : (it.where);
+        const showThis = (it.type!=="optional") || appState.nights[day.date]; // optional only when night enabled
+        if(!showThis) return '';
+        const rng = getItemTime(day, {id:it.id, effectiveId:effId, time:it.time});
+        const timeText = rng? `${fmtHM(rng[0])}–${fmtHM(rng[1])}` : '（未设置时间）';
+        const isConflict = rng && conflictIds.has(effId);
+        return `
+        <div style="padding:8px 0;border-top:2px solid var(--border);">
+          <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;">
+            <div>
+              <div style="font-size:20px;font-weight:700;color:#fff;">${effTitle} ${(it.type==='choice' && !appState.selected[day.date])?'<span class="badge" style="margin-left:8px;">待选择 A/B</span>':''}</div>
+              ${(effWhere?`<div class="muted" style="font-size:16px;">${effWhere}</div>`:'')}
+              <div class="timeText ${isConflict?'conflict':''}" data-time="${day.date}|${effId}">
+                ${timeText} ${isConflict?'<span class="badge" style="margin-left:8px;background:#2a0b0b;color:#ffb0aa;border-color:#ff453a;">与同日其他安排冲突</span>':''}
+              </div>
+              ${(it.note?`<div class="muted" style="font-size:16px;">${it.note}</div>`:'')}
+            </div>
+            <div>
+              <button class="btn" data-edit="${day.date}|${effId}|${it.id}">编辑时间</button>
+            </div>
+          </div>
+          ${(day.date==='2025-09-18'||day.date==='2025-09-19')?`
+            <div class="choiceRow">
+              <button class="pill ${(appState.selected[day.date]==='A')?'active':''}" data-day="${day.date}" data-val="A">选择行动A</button>
+              <button class="pill ${(appState.selected[day.date]==='B')?'active':''}" data-day="${day.date}" data-val="B">选择行动B</button>
+              <button class="pill ${(appState.selected[day.date]===null)?'active':''}" data-day="${day.date}" data-val="">暂不选择</button>
+            </div>
+          `:''}
+        </div>`;
+      }).join("")}
+    </div>`);
+  }
+  elFull.innerHTML = parts.join("");
+
+  // hook A/B buttons
+  elFull.querySelectorAll("button[data-day]").forEach(btn=>{
+    btn.addEventListener("click",()=>{
+      const day = btn.getAttribute("data-day");
+      const val = btn.getAttribute("data-val")||null;
+      // 互补
+      appState.selected[day]=val;
+      if(val==="A"||val==="B"){
+        const other = day==="2025-09-18" ? "2025-09-19" : "2025-09-18";
+        appState.selected[other] = (val==="A")? "B":"A";
+      }
+      persist(); renderAll();
+    });
+  });
+
+  // hook edit buttons
+  elFull.querySelectorAll("button[data-edit]").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      const [dayStr, effId, baseId] = btn.getAttribute("data-edit").split("|");
+      openTimeEditor(dayStr, effId, baseId);
+    });
+  });
+}
+
+/* ===== Time editor (inline modal) ===== */
+function openTimeEditor(dayStr, effId, baseId){
+  const day = PLAN.days.find(d=>d.date===dayStr);
+  if(!day) return;
+  // current values (override or default)
+  let start = "", end = "";
+  const ov = getOverride(dayStr, effId);
+  if(ov){ start = ov.start; end = ov.end; }
+  else{
+    const slot = day.slots.find(s=>s.id===baseId);
+    if(slot && slot.time){
+      const s = new Date(slot.time[0]); const e = new Date(slot.time[1]);
+      start = pad2(s.getHours())+":"+pad2(s.getMinutes());
+      end   = pad2(e.getHours())+":"+pad2(e.getMinutes());
+    }
+  }
+
+  // build modal
+  const wrap = document.createElement('div');
+  wrap.style.position='fixed'; wrap.style.inset='0'; wrap.style.background='rgba(0,0,0,.6)'; wrap.style.zIndex='9999';
+  wrap.innerHTML = `
+    <div style="max-width:560px;margin:10% auto;background:#0b0f1a;border:2px solid var(--border);border-radius:16px;padding:16px;">
+      <div style="font-size:22px;font-weight:800;margin-bottom:10px;">编辑时间</div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <input id="tStart" type="time" class="timeInput" value="${start}">
+        <span>—</span>
+        <input id="tEnd" type="time" class="timeInput" value="${end}">
+      </div>
+      <div id="tErr" class="danger" style="margin-top:8px;display:none;"></div>
+      <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:14px;">
+        <button id="btnCancel" class="btn">取消</button>
+        <button id="btnOk" class="btn primary">完成</button>
+      </div>
+    </div>`;
+  document.body.appendChild(wrap);
+
+  const err = wrap.querySelector('#tErr');
+  function validatePair(st, ed){
+    if(!st || !ed){ err.style.display='block'; err.textContent='请完整选择开始与结束时间'; return false; }
+    if(ed<=st){ err.style.display='block'; err.textContent='结束时间必须晚于开始时间'; return false; }
+    // simulate apply and check conflict
+    const old = getOverride(dayStr, effId);
+    setOverride(dayStr, effId, st, ed);
+    const conflicts = findConflictsForDay(PLAN.days.find(d=>d.date===dayStr));
+    // revert tentative if conflict; We'll keep override for conflict detection? Revert afterwards:
+    if(conflicts.has(effId)){
+      if(old) setOverride(dayStr, effId, old.start, old.end); else setOverride(dayStr, effId, null, null);
+      err.style.display='block'; err.textContent='与同一天其他安排时间冲突，请调整';
+      return false;
+    }
+    // revert again; we will apply on OK
+    if(old) setOverride(dayStr, effId, old.start, old.end); else setOverride(dayStr, effId, null, null);
+    err.style.display='none'; return true;
+  }
+
+  wrap.querySelector('#btnCancel').onclick = ()=>{ document.body.removeChild(wrap); };
+  wrap.querySelector('#btnOk').onclick = ()=>{
+    const st = wrap.querySelector('#tStart').value;
+    const ed = wrap.querySelector('#tEnd').value;
+    if(validatePair(st, ed)){
+      setOverride(dayStr, effId, st, ed);
+      persist(); renderAll();
+      document.body.removeChild(wrap);
+    }
+  };
+}
+
+/* ===== Initialize & Events ===== */
+document.getElementById("resetBtn").addEventListener("click",()=>{
+  if(confirm("重置将清除你的选择、编辑过的时间与完成状态，确定？")){
+    appState.selected={"2025-09-18":null,"2025-09-19":null};
+    appState.nights={"2025-09-18":false,"2025-09-19":false};
+    appState.done={};
+    appState.times={};
+    persist(); renderAll();
+  }
+});
+document.getElementById("saveBtn").addEventListener("click",()=>{
+  if(anyConflicts()){ alert("仍存在时间冲突，无法保存"); return; }
+  saveSnapshot(getSnapshot()); refreshSaveButton();
+});
+
+function renderAll(){ renderHeader(); renderNow(); renderFull(); refreshSaveButton(); }
+
+if(!localStorage.getItem(LS_SAVED)){ saveSnapshot(getSnapshot()); }
+renderAll();
+setInterval(()=>{ renderAll(); }, 30000);
+</script>
+</body>
+</html>
